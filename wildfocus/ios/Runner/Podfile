@@ -1,0 +1,19 @@
+platform :ios, '11.0'
+
+# CocoaPods kullanarak Flutter bağımlılıklarını yüklemek için aşağıdaki satırı bırakın
+flutter_application_path = '../..'
+load File.join(flutter_application_path, 'packages', 'flutter_tools', 'bin', 'podhelper.rb')
+
+# iOS için kullanılan paketleri ekleyebilirsiniz. Burada örneğin sign_in_with_apple ekliyoruz:
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  # Flutter bağımlılıklarını yükle
+  pod 'Flutter', :path => flutter_application_path
+  # Eğer başka iOS bağımlılıkları varsa onları da buraya ekleyebilirsiniz
+  pod 'sign_in_with_apple', '~> 3.0.0'
+
+  # Kullanıcıların kendi proje bağımlılıklarını ekleyebilmesi için aşağıdaki satırı bırakın
+  install_all_flutter_pods(flutter_application_path)
+end

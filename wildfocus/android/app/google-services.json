@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "899697179056",
+    "project_id": "wild-focus-9231c",
+    "storage_bucket": "wild-focus-9231c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:899697179056:android:907bb04f37b60512ccfe75",
+        "android_client_info": {
+          "package_name": "com.example.wildfocus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrwf5TVKpFgKLZHs7LulndhLBTNwp8Tt0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
