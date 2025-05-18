@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:wildfocus/customs/customcolors.dart';
 
 class DetectionScreen extends StatefulWidget {
@@ -11,160 +12,114 @@ class DetectionScreen extends StatefulWidget {
   _DetectionScreenState createState() => _DetectionScreenState();
 }
 
-class _DetectionScreenState extends State<DetectionScreen> with TickerProviderStateMixin {
+class _DetectionScreenState extends State<DetectionScreen>
+    with TickerProviderStateMixin {
   File? _image;
-  String? _speciesName;
-  String? _probability;
-  List<Map<String, dynamic>> _similarImages = [];
-  String? _details;
-  String? _isMushroom; // Mantar olup olmadığını belirten değişken
-  bool _isLoading = false;
+  String? _resultText;
+  late Interpreter _interpreter;
 
+  late List<String> _titleText;
   late List<AnimationController> _controllers;
   late List<Animation<double>> _fadeAnimations;
-  final String _titleText = "Mantar Keşfi";
 
   @override
   void initState() {
     super.initState();
+    _titleText = "Mantar Keşfi".split("");
+    _controllers = _titleText
+        .map((_) => AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 300),
+            ))
+        .toList();
+    _fadeAnimations = _controllers
+        .map((controller) =>
+            Tween<double>(begin: 0.0, end: 1.0).animate(controller))
+        .toList();
 
-    _controllers = List.generate(
-      _titleText.length,
-      (index) => AnimationController(
-        vsync: this,
-        duration: Duration(milliseconds: 500),
-      ),
-    );
-
-    _fadeAnimations =
-        _controllers
-            .map(
-              (controller) => Tween<double>(begin: 0, end: 1).animate(
-                CurvedAnimation(parent: controller, curve: Curves.easeIn),
-              ),
-            )
-            .toList();
-
-    _playTitleAnimation();
+    _loadModel();
+    _startAnimation();
   }
 
-  void _playTitleAnimation() async {
+  void _startAnimation() async {
     for (int i = 0; i < _controllers.length; i++) {
-      await Future.delayed(Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 50));
       _controllers[i].forward();
     }
   }
 
+  Future<void> _loadModel() async {
+    try {
+      _interpreter = await Interpreter.fromAsset('mobilenet_model.tflite');
+    } catch (e) {
+      print("Model yüklenirken hata oluştu: $e");
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final permission = await Permission.camera.request();
+      if (!permission.isGranted) return;
+    }
+
+    final pickedFile = await ImagePicker().pickImage(source: source);
+    if (pickedFile == null) return;
+
+    final file = File(pickedFile.path);
+    setState(() => _image = file);
+    await _runModel(file);
+  }
+
+  Future<void> _runModel(File imageFile) async {
+    final bytes = await imageFile.readAsBytes();
+    final image = img.decodeImage(bytes);
+    if (image == null) return;
+
+    final resized = img.copyResize(image, width: 224, height: 224);
+
+    // Model input shape: [1,224,224,3], float32 normalized [0-1]
+    final input = Float32List(1 * 224 * 224 * 3);
+    int index = 0;
+
+ for (var y = 0; y < 224; y++) {
+      for (var x = 0; x < 224; x++) {
+        final pixel = resized.getPixel(x, y);
+        final r = pixel.r.toDouble() / 255.0;
+        final g = pixel.g.toDouble() / 255.0;
+        final b = pixel.b.toDouble() / 255.0;
+
+        input[index++] = r;
+        input[index++] = g;
+        input[index++] = b;
+      }
+    }
+
+    // Output shape: [1,1]
+    var output = List.filled(1, 0.0).reshape([1, 1]);
+
+    _interpreter.run(input.reshape([1, 224, 224, 3]), output);
+
+    final prediction = output[0][0] as double;
+
+    final result = prediction < 0.5
+        ? "🔴 Mantar zehirli olarak tahmin edildi"
+        : "🟢 Mantar zehirsiz olarak tahmin edildi";
+
+    setState(() {
+      _resultText = result;
+    });
+  }
+
+  void _pickImageFromCamera() => _pickImage(ImageSource.camera);
+  void _pickImageFromGallery() => _pickImage(ImageSource.gallery);
+
   @override
   void dispose() {
+    _interpreter.close();
     for (var controller in _controllers) {
       controller.dispose();
     }
     super.dispose();
-  }
-
-  Future<void> _pickImageFromCamera() async {
-    final cameraPermission = await Permission.camera.request();
-    if (!cameraPermission.isGranted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Kamera izni verilmedi!')));
-      return;
-    }
-
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-    );
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-        _isLoading = true;
-      });
-      await _identifySpecies(_image!);
-    }
-  }
-
-  Future<void> _pickImageFromGallery() async {
-    final pickedFile = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-    );
-    if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-        _isLoading = true;
-      });
-      await _identifySpecies(_image!);
-    }
-  }
-
-  Future<void> _identifySpecies(File image) async {
-    final apiUrl = 'https://mushroom.kindwise.com/api/v1/identification';
-    final apiKey = 'wildfocus'; // API key burada
-
-    String base64Image = encodeImageToBase64(image.path);
-    String dataUriImage = 'data:image/jpeg;base64,$base64Image';
-
-    final response = await http.post(
-      Uri.parse(apiUrl),
-      headers: {'Api-Key': apiKey, 'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'images': [dataUriImage],
-        'latitude': 49.207,
-        'longitude': 16.608,
-        'similar_images': true,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-
-      // Yanıtı yazdırarak ne geldiğini görmek faydalı olabilir
-      print('API Yanıtı: $data');
-
-      // Eğer classification ve suggestions varsa
-      final suggestions = data['result']?['classification']?['suggestions'];
-
-      if (suggestions != null && suggestions.isNotEmpty) {
-        final firstSuggestion = suggestions[0];
-        setState(() {
-          _speciesName = firstSuggestion['name'] ?? 'Tür adı bulunamadı';
-          _probability =
-              firstSuggestion['probability']?.toString() ?? 'Belirsiz';
-          _similarImages = List<Map<String, dynamic>>.from(firstSuggestion['similar_images'] ?? []);
-          _details = firstSuggestion['description']?.toString() ?? 'Detay bulunamadı';
-        });
-      } else {
-        setState(() {
-          _speciesName = 'Herhangi bir öneri bulunamadı';
-        });
-      }
-
-      // Mantar olup olmadığını kontrol etme
-      final isMushroomData = data['result']?['is_mushroom'];
-      if (isMushroomData != null) {
-        setState(() {
-          _isMushroom = isMushroomData['probability']?.toString() ?? 'Mantar değil';
-        });
-      } else {
-        setState(() {
-          _isMushroom = 'Mantar durumu belirlenemedi';
-        });
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-    } else {
-      setState(() {
-        _speciesName = 'Tanımlama başarısız';
-        _isLoading = false;
-      });
-    }
-  }
-
-  String encodeImageToBase64(String imagePath) {
-    final imageBytes = File(imagePath).readAsBytesSync();
-    return base64Encode(imageBytes);
   }
 
   @override
@@ -199,10 +154,47 @@ class _DetectionScreenState extends State<DetectionScreen> with TickerProviderSt
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            _image != null
-                ? Image.file(_image!, height: 300)
-                : Icon(Icons.image, size: 200),
-            const SizedBox(height: 15),
+            if (_image != null) ...[
+              Image.file(_image!, height: 300),
+              const SizedBox(height: 15),
+              if (_resultText != null)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _resultText!.contains("zehirli")
+                        ? Colors.red.shade100
+                        : Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _resultText!,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: _resultText!.contains("zehirli")
+                          ? Colors.red
+                          : Colors.green[800],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+            ] else ...[
+              const Icon(Icons.image, size: 200),
+              const SizedBox(height: 15),
+              if (_resultText != null)
+                Text(
+                  _resultText!,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: _resultText!.contains("zehirli")
+                        ? Colors.red
+                        : Colors.green[800],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+            ],
+            const SizedBox(height: 30),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -243,72 +235,6 @@ class _DetectionScreenState extends State<DetectionScreen> with TickerProviderSt
                 ),
               ],
             ),
-            const SizedBox(height: 50),
-            _isLoading
-                ? CircularProgressIndicator()
-                : _speciesName == null
-                    ? Container()
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Mantar mı?: $_isMushroom',
-                            style: TextStyle(
-                                fontSize: 22, color: CustomColors.primaryText),
-                          ),
-                          Text(
-                            'Tür Adı: $_speciesName',
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: CustomColors.primaryText,
-                            ),
-                          ),
-                          Text(
-                            'Olasılık: $_probability',
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: CustomColors.primaryText,
-                            ),
-                          ),
-                          Text(
-                            'Detaylar: $_details',
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: CustomColors.primaryText,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Benzer Görseller:',
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: CustomColors.primaryText,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _similarImages.isNotEmpty
-                              ? SizedBox(
-                                  height: 100,
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: _similarImages.length,
-                                    itemBuilder: (context, index) {
-                                      return Padding(
-                                        padding:
-                                            const EdgeInsets.only(right: 10),
-                                        child: Image.network(
-                                          _similarImages[index]['url'],
-                                          width: 100,
-                                          height: 100,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                )
-                              : Text('Benzer görsel bulunamadı'),
-                        ],
-                      ),
           ],
         ),
       ),
