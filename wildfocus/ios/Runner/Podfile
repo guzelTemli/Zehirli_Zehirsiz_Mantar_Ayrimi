@@ -1,4 +1,4 @@
-platform :ios, '11.0'
+platform :ios, '13.0'
 
 # CocoaPods kullanarak Flutter bağımlılıklarını yüklemek için aşağıdaki satırı bırakın
 flutter_application_path = '../..'
