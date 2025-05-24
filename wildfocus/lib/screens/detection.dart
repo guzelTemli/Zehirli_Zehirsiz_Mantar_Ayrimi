@@ -21,11 +21,11 @@ class _DetectionScreenState extends State<DetectionScreen>
   String? _speciesName;
   String? _probability;
   List<Map<String, dynamic>> _similarImages = [];
-  String? _details;
   String? _isMushroom; // Mantar olup olmadığını belirten değişken
   bool _isLoading = false;
   Interpreter? _interpreter;
   bool _isModelLoaded = false;
+  Map<String, dynamic>? _mushroomDetails;
 
   late List<String> _titleText;
   late List<AnimationController> _controllers;
@@ -65,14 +65,10 @@ class _DetectionScreenState extends State<DetectionScreen>
 
   Future<void> _loadModel() async {
     try {
-      print("Model yüklenmeye başlıyor...");
-      final stopwatch = Stopwatch()..start();
-
       // Önce model dosyasının varlığını kontrol et
       final modelFile = await DefaultAssetBundle.of(
         context,
       ).load('assets/mobilenet_model.tflite');
-      print("Model dosyası bulundu, boyut: ${modelFile.lengthInBytes} bytes");
 
       // Model yükleme seçeneklerini ayarla
       final interpreterOptions =
@@ -85,22 +81,10 @@ class _DetectionScreenState extends State<DetectionScreen>
         options: interpreterOptions,
       );
 
-      // Model giriş ve çıkış şekillerini kontrol et
-      print("Model giriş şekli: ${_interpreter!.getInputTensor(0).shape}");
-      print("Model çıkış şekli: ${_interpreter!.getOutputTensor(0).shape}");
-
-      stopwatch.stop();
-      print("Model yükleme süresi: ${stopwatch.elapsedMilliseconds}ms");
-      print("Model başarıyla yüklendi");
-
       setState(() {
         _isModelLoaded = true;
       });
     } catch (e) {
-      print("Model yüklenirken hata oluştu: $e");
-      print("Hata detayı: ${e.toString()}");
-      print("Hata stack trace: ${StackTrace.current}");
-
       setState(() {
         _isModelLoaded = false;
         _resultText =
@@ -137,23 +121,15 @@ class _DetectionScreenState extends State<DetectionScreen>
       final image = img.decodeImage(bytes);
       if (image == null) return;
 
-      print("Orijinal görüntü boyutları: ${image.width}x${image.height}");
-
       // Giriş boyutlarını modelin beklediği şekilde ayarla
       final inputShape = _interpreter!.getInputTensor(0).shape;
       final inputSize = inputShape[1]; // 224
-
-      print("Model giriş boyutları: ${inputShape.toString()}");
 
       final resized = img.copyResize(
         image,
         width: inputSize,
         height: inputSize,
         interpolation: img.Interpolation.linear,
-      );
-
-      print(
-        "Yeniden boyutlandırılmış görüntü: ${resized.width}x${resized.height}",
       );
 
       // Giriş tensörünü hazırla - 4 boyutlu olmalı [1, 224, 224, 3]
@@ -176,15 +152,11 @@ class _DetectionScreenState extends State<DetectionScreen>
       // Çıkış tensörünü hazırla - [1, 1] şeklinde olmalı
       final outputBuffer = Float32List(1 * 1).reshape([1, 1]);
 
-      print("Giriş tensörü şekli: ${inputArray.shape}");
-      print("Çıkış tensörü şekli: ${outputBuffer.shape}");
-
       // Modeli çalıştır
       _interpreter!.run(inputArray, outputBuffer);
 
       // Sonucu işle
       final prediction = outputBuffer[0][0];
-      print("Model tahmini (ham değer): $prediction");
 
       final result =
           prediction < 0.5
@@ -195,9 +167,6 @@ class _DetectionScreenState extends State<DetectionScreen>
         _resultText = result;
       });
     } catch (e) {
-      print("Tahmin yapılırken hata oluştu: $e");
-      print("Hata detayı: ${e.toString()}");
-      print("Hata stack trace: ${StackTrace.current}");
       setState(() {
         _resultText = "Tahmin yapılırken bir hata oluştu: $e";
       });
@@ -205,68 +174,73 @@ class _DetectionScreenState extends State<DetectionScreen>
   }
 
   Future<void> _identifySpecies(File image) async {
-    final apiUrl = 'https://mushroom.kindwise.com/api/v1/identification';
-    final apiKey =
-        '71hVRKofiYCBvlgYJZ0tJAT0Znp6S3wFNn0XV1oGPuKJuAfPXH'; // API key burada
+    final apiUrl =
+        'https://mushroom.kindwise.com/api/v1/identification?details=common_names,gbif_id,taxonomy,rank,characteristic,edibility,psychoactive';
+    final apiKey = '71hVRKofiYCBvlgYJZ0tJAT0Znp6S3wFNn0XV1oGPuKJuAfPXH';
 
     String base64Image = encodeImageToBase64(image.path);
     String dataUriImage = 'data:image/jpeg;base64,$base64Image';
 
-    final response = await http.post(
-      Uri.parse(apiUrl),
-      headers: {'Api-Key': apiKey, 'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'images': [dataUriImage],
-        'latitude': 49.207,
-        'longitude': 16.608,
-        'similar_images': true,
-      }),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Api-Key': apiKey, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'images': [dataUriImage],
+          'latitude': 49.207,
+          'longitude': 16.608,
+          'similar_images': true,
+        }),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        // Eğer classification ve suggestions varsa
+        final suggestions = data['result']?['classification']?['suggestions'];
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = json.decode(response.body);
+        if (suggestions != null && suggestions.isNotEmpty) {
+          final firstSuggestion = suggestions[0];
+          setState(() {
+            _speciesName = firstSuggestion['name'] ?? 'Tür adı bulunamadı';
+            _probability =
+                firstSuggestion['probability']?.toString() ?? 'Belirsiz';
+            _similarImages = List<Map<String, dynamic>>.from(
+              firstSuggestion['similar_images'] ?? [],
+            );
 
-      // Yanıtı yazdırarak ne geldiğini görmek faydalı olabilir
-      print('API Yanıtı: $data');
+            // Modal Sheet için detaylar
+            if (firstSuggestion['details'] != null) {
+              _mushroomDetails = firstSuggestion['details'];
+            }
+          });
+        } else {
+          setState(() {
+            _speciesName = 'Herhangi bir öneri bulunamadı';
+          });
+        }
 
-      // Eğer classification ve suggestions varsa
-      final suggestions = data['result']?['classification']?['suggestions'];
+        // Mantar olup olmadığını kontrol etme
+        final isMushroomData = data['result']?['is_mushroom'];
+        if (isMushroomData != null) {
+          setState(() {
+            _isMushroom =
+                isMushroomData['probability']?.toString() ?? 'Mantar değil';
+          });
+        } else {
+          setState(() {
+            _isMushroom = 'Mantar durumu belirlenemedi';
+          });
+        }
 
-      if (suggestions != null && suggestions.isNotEmpty) {
-        final firstSuggestion = suggestions[0];
         setState(() {
-          _speciesName = firstSuggestion['name'] ?? 'Tür adı bulunamadı';
-          _probability =
-              firstSuggestion['probability']?.toString() ?? 'Belirsiz';
-          _similarImages = List<Map<String, dynamic>>.from(
-            firstSuggestion['similar_images'] ?? [],
-          );
-          _details =
-              firstSuggestion['description']?.toString() ?? 'Detay bulunamadı';
+          _isLoading = false;
         });
       } else {
         setState(() {
-          _speciesName = 'Herhangi bir öneri bulunamadı';
+          _speciesName = 'Tanımlama başarısız';
+          _isLoading = false;
         });
       }
-
-      // Mantar olup olmadığını kontrol etme
-      final isMushroomData = data['result']?['is_mushroom'];
-      if (isMushroomData != null) {
-        setState(() {
-          _isMushroom =
-              isMushroomData['probability']?.toString() ?? 'Mantar değil';
-        });
-      } else {
-        setState(() {
-          _isMushroom = 'Mantar durumu belirlenemedi';
-        });
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
-    } else {
+    } catch (e) {
       setState(() {
         _speciesName = 'Tanımlama başarısız';
         _isLoading = false;
@@ -282,6 +256,189 @@ class _DetectionScreenState extends State<DetectionScreen>
   void _pickImageFromCamera() => _pickImage(ImageSource.camera);
   void _pickImageFromGallery() => _pickImage(ImageSource.gallery);
 
+  void _showDetailsModal() {
+    if (_mushroomDetails == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => Container(
+            height: MediaQuery.of(context).size.height * 0.8,
+            decoration: BoxDecoration(
+              color: CustomColors.background,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: CustomColors.textfieldFill,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Mantar Detayları',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: CustomColors.primaryText,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.close,
+                          color: CustomColors.primaryText,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_mushroomDetails!['common_names'] != null) ...[
+                          const Text(
+                            'Yaygın İsimler',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            (_mushroomDetails!['common_names'] as List).join(
+                              ', ',
+                            ),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_mushroomDetails!['taxonomy'] != null) ...[
+                          const Text(
+                            'Taksonomi',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...(_mushroomDetails!['taxonomy']
+                                  as Map<String, dynamic>)
+                              .entries
+                              .map(
+                                (entry) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 16,
+                                    bottom: 4,
+                                  ),
+                                  child: Text(
+                                    '${entry.key}: ${entry.value}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: CustomColors.primaryText,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_mushroomDetails!['characteristic'] != null) ...[
+                          const Text(
+                            'Özellikler',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...(_mushroomDetails!['characteristic']
+                                  as Map<String, dynamic>)
+                              .entries
+                              .map(
+                                (entry) => Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 16,
+                                    bottom: 4,
+                                  ),
+                                  child: Text(
+                                    '${entry.key}: ${entry.value}',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: CustomColors.primaryText,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_mushroomDetails!['edibility'] != null) ...[
+                          const Text(
+                            'Yenilebilirlik',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _mushroomDetails!['edibility'].toString(),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_mushroomDetails!['psychoactive'] != null) ...[
+                          const Text(
+                            'Psikoaktif',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _mushroomDetails!['psychoactive']
+                                ? 'Evet'
+                                : 'Hayır',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: CustomColors.primaryText,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
   @override
   void dispose() {
     _interpreter?.close();
@@ -296,7 +453,14 @@ class _DetectionScreenState extends State<DetectionScreen>
     return Scaffold(
       backgroundColor: CustomColors.background,
       appBar: AppBar(
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: true,
+        leading:
+            Navigator.of(context).canPop()
+                ? IconButton(
+                  icon: Icon(Icons.arrow_back, color: CustomColors.primaryText),
+                  onPressed: () => Navigator.of(context).pop(),
+                )
+                : null,
         backgroundColor: CustomColors.textfieldFill,
         elevation: 0,
         centerTitle: true,
@@ -326,45 +490,9 @@ class _DetectionScreenState extends State<DetectionScreen>
             if (_image != null) ...[
               Image.file(_image!, height: 300),
               const SizedBox(height: 15),
-              if (_resultText != null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color:
-                        _resultText!.contains("zehirli")
-                            ? Colors.red.shade100
-                            : Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _resultText!,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color:
-                          _resultText!.contains("zehirli")
-                              ? Colors.red
-                              : Colors.green[800],
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
             ] else ...[
               const Icon(Icons.image, size: 200),
               const SizedBox(height: 15),
-              if (_resultText != null)
-                Text(
-                  _resultText!,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color:
-                        _resultText!.contains("zehirli")
-                            ? Colors.red
-                            : Colors.green[800],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
             ],
             const SizedBox(height: 30),
             Row(
@@ -407,7 +535,32 @@ class _DetectionScreenState extends State<DetectionScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 50),
+            if (_resultText != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color:
+                      _resultText!.contains("zehirli")
+                          ? Colors.red.shade100
+                          : Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _resultText!,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color:
+                        _resultText!.contains("zehirli")
+                            ? Colors.red
+                            : Colors.green[800],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
             _isLoading
                 ? CircularProgressIndicator()
                 : _speciesName == null
@@ -416,7 +569,7 @@ class _DetectionScreenState extends State<DetectionScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Mantar mı?: $_isMushroom',
+                      'Mantar mı?: ${_isMushroom != null && double.tryParse(_isMushroom!) != null ? '%${(double.parse(_isMushroom!) * 100).toStringAsFixed(1)}' : (_isMushroom ?? '')}',
                       style: TextStyle(
                         fontSize: 22,
                         color: CustomColors.primaryText,
@@ -430,14 +583,7 @@ class _DetectionScreenState extends State<DetectionScreen>
                       ),
                     ),
                     Text(
-                      'Olasılık: $_probability',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: CustomColors.primaryText,
-                      ),
-                    ),
-                    Text(
-                      'Detaylar: $_details',
+                      'Olasılık: ${_probability != null && double.tryParse(_probability!) != null ? '%${(double.parse(_probability!) * 100).toStringAsFixed(1)}' : (_probability ?? '')}',
                       style: TextStyle(
                         fontSize: 22,
                         color: CustomColors.primaryText,
@@ -472,6 +618,27 @@ class _DetectionScreenState extends State<DetectionScreen>
                           ),
                         )
                         : Text('Benzer görsel bulunamadı'),
+                    const SizedBox(height: 20),
+                    if (_mushroomDetails != null)
+                      Center(
+                        child: ElevatedButton(
+                          onPressed: _showDetailsModal,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: CustomColors.button,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 40,
+                              vertical: 15,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          child: const Text(
+                            'Detayları Gör',
+                            style: TextStyle(color: CustomColors.buttontext),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
           ],
