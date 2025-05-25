@@ -8,13 +8,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:wildfocus/customs/customcolors.dart';
+import 'package:wildfocus/models/mushroom_detection.dart';
 
 class DetectionScreen extends StatefulWidget {
   @override
-  _DetectionScreenState createState() => _DetectionScreenState();
+  DetectionScreenState createState() => DetectionScreenState();
 }
 
-class _DetectionScreenState extends State<DetectionScreen>
+class DetectionScreenState extends State<DetectionScreen>
     with TickerProviderStateMixin {
   File? _image;
   String? _resultText;
@@ -176,7 +177,7 @@ class _DetectionScreenState extends State<DetectionScreen>
   Future<void> _identifySpecies(File image) async {
     final apiUrl =
         'https://mushroom.kindwise.com/api/v1/identification?details=common_names,gbif_id,taxonomy,rank,characteristic,edibility,psychoactive';
-    final apiKey = '71hVRKofiYCBvlgYJZ0tJAT0Znp6S3wFNn0XV1oGPuKJuAfPXH';
+    final apiKey = 'API KEY';
 
     String base64Image = encodeImageToBase64(image.path);
     String dataUriImage = 'data:image/jpeg;base64,$base64Image';
@@ -482,167 +483,235 @@ class _DetectionScreenState extends State<DetectionScreen>
           }),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            if (_image != null) ...[
-              Image.file(_image!, height: 300),
-              const SizedBox(height: 15),
-            ] else ...[
-              const Icon(Icons.image, size: 200),
-              const SizedBox(height: 15),
-            ],
-            const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton(
-                  onPressed: _pickImageFromCamera,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: CustomColors.button,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 40,
-                      vertical: 15,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  child: const Text(
-                    'Kamera',
-                    style: TextStyle(color: CustomColors.buttontext),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed: _pickImageFromGallery,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: CustomColors.button,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 40,
-                      vertical: 15,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                  child: const Text(
-                    'Galeri',
-                    style: TextStyle(color: CustomColors.buttontext),
-                  ),
-                ),
-              ],
-            ),
-            if (_resultText != null) ...[
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color:
-                      _resultText!.contains("zehirli")
-                          ? Colors.red.shade100
-                          : Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _resultText!,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color:
-                        _resultText!.contains("zehirli")
-                            ? Colors.red
-                            : Colors.green[800],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            _isLoading
-                ? CircularProgressIndicator()
-                : _speciesName == null
-                ? Container()
-                : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mantar mı?: ${_isMushroom != null && double.tryParse(_isMushroom!) != null ? '%${(double.parse(_isMushroom!) * 100).toStringAsFixed(1)}' : (_isMushroom ?? '')}',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: CustomColors.primaryText,
-                      ),
-                    ),
-                    Text(
-                      'Tür Adı: $_speciesName',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: CustomColors.primaryText,
-                      ),
-                    ),
-                    Text(
-                      'Olasılık: ${_probability != null && double.tryParse(_probability!) != null ? '%${(double.parse(_probability!) * 100).toStringAsFixed(1)}' : (_probability ?? '')}',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: CustomColors.primaryText,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Benzer Görseller:',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: CustomColors.primaryText,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _similarImages.isNotEmpty
-                        ? SizedBox(
-                          height: 100,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _similarImages.length,
-                            itemBuilder: (context, index) {
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 10),
-                                child: Image.network(
-                                  _similarImages[index]['url'],
-                                  width: 100,
-                                  height: 100,
-                                  fit: BoxFit.cover,
-                                ),
-                              );
-                            },
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  if (_image != null) ...[
+                    Image.file(_image!, height: 300),
+                    const SizedBox(height: 15),
+                  ] else ...[
+                    const Icon(Icons.image, size: 200),
+                    const SizedBox(height: 15),
+                  ],
+                  const SizedBox(height: 30),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        onPressed: _pickImageFromCamera,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: CustomColors.button,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 15,
                           ),
-                        )
-                        : Text('Benzer görsel bulunamadı'),
-                    const SizedBox(height: 20),
-                    if (_mushroomDetails != null)
-                      Center(
-                        child: ElevatedButton(
-                          onPressed: _showDetailsModal,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: CustomColors.button,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 40,
-                              vertical: 15,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                          ),
-                          child: const Text(
-                            'Detayları Gör',
-                            style: TextStyle(color: CustomColors.buttontext),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
                           ),
                         ),
+                        child: const Text(
+                          'Kamera',
+                          style: TextStyle(color: CustomColors.buttontext),
+                        ),
                       ),
+                      const SizedBox(width: 20),
+                      ElevatedButton(
+                        onPressed: _pickImageFromGallery,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: CustomColors.button,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 40,
+                            vertical: 15,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: const Text(
+                          'Galeri',
+                          style: TextStyle(color: CustomColors.buttontext),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_resultText != null) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color:
+                            _resultText!.contains("zehirli")
+                                ? Colors.red.shade100
+                                : Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _resultText!,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _resultText!.contains("zehirli")
+                                  ? Colors.red
+                                  : Colors.green[800],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                   ],
-                ),
-          ],
-        ),
+                  if (_resultText != null)
+                    Column(
+                      children: [
+                        Text(
+                          'Mantar mı?: ${_isMushroom != null && double.tryParse(_isMushroom!) != null ? '%${(double.parse(_isMushroom!) * 100).toStringAsFixed(1)}' : (_isMushroom ?? '')}',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: CustomColors.primaryText,
+                          ),
+                        ),
+                        Text(
+                          'Tür Adı: $_speciesName',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: CustomColors.primaryText,
+                          ),
+                        ),
+                        Text(
+                          'Olasılık: ${_probability != null && double.tryParse(_probability!) != null ? '%${(double.parse(_probability!) * 100).toStringAsFixed(1)}' : (_probability ?? '')}',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: CustomColors.primaryText,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Benzer Görseller:',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: CustomColors.primaryText,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _similarImages.isNotEmpty
+                            ? SizedBox(
+                              height: 100,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _similarImages.length,
+                                itemBuilder: (context, index) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 10),
+                                    child: Image.network(
+                                      _similarImages[index]['url'],
+                                      width: 100,
+                                      height: 100,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                            : Text('Benzer görsel bulunamadı'),
+                        const SizedBox(height: 20),
+                        if (_mushroomDetails != null)
+                          Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _showDetailsModal,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: CustomColors.button,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 0,
+                                        vertical: 15,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Detayları Gör',
+                                      style: TextStyle(
+                                        color: CustomColors.buttontext,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed:
+                                        (_speciesName != null && _image != null)
+                                            ? () async {
+                                              final now = DateTime.now();
+                                              final detection = MushroomDetection(
+                                                name: _speciesName!,
+                                                date:
+                                                    "${now.day}.${now.month}.${now.year}  ${now.hour}:${now.minute}",
+                                                isPoisonous: _resultText!
+                                                    .contains("zehirli"),
+                                                imageUrl: _image!.path,
+                                                probability: _probability,
+                                                isMushroom: _isMushroom,
+                                                similarImages:
+                                                    _similarImages
+                                                        .map(
+                                                          (e) =>
+                                                              e['url']
+                                                                  as String,
+                                                        )
+                                                        .toList(),
+                                                details: _mushroomDetails,
+                                              );
+                                              await MushroomDetection.saveToCollection(
+                                                detection,
+                                              );
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'Koleksiyona eklendi!',
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                            : null,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Koleksiyona Ekle'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: CustomColors.button,
+                                      foregroundColor: CustomColors.buttontext,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 0,
+                                        vertical: 15,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

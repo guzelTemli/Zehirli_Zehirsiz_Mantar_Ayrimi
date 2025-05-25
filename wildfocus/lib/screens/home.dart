@@ -1,69 +1,110 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import 'package:wildfocus/screens/detection.dart';
+import 'package:wildfocus/screens/collection.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:wildfocus/customs/customcolors.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  HomeScreenState createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => DetectionScreen()),
+        );
+        break;
+      case 1:
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CollectionScreen()),
+        );
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // Tam ekran görsel
-          Positioned.fill(
-            child: Image.asset(
-              'images/mushroomm.jpg',
-              fit: BoxFit.cover,
-            ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              CustomColors.background,
+              CustomColors.background.withAlpha(230),
+              CustomColors.textfieldFill,
+            ],
           ),
-
-          // Sol üstte "Keşfe başla" yazısı
-  Positioned(
-  top: 60,
-  left: 20,
-  child: Text(
-    'Keşfe\n     Başla',
-    style:  GoogleFonts.cinzel(
-      fontSize: 48,
-      fontWeight: FontWeight.bold,
-      foreground: Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFFFE082), // açık altın sarısı
-            Color(0xFFFFC107), // sıcak kehribar
-            Color(0xFFB26500), // koyu altın/turuncu
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'WildFocus',
+                style: GoogleFonts.poppins(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFFF9D77E),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Mantar Keşfi',
+                style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  color: CustomColors.primaryText.withAlpha(179),
+                ),
+              ),
+              Lottie.asset('images/magnifier.json'),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: CustomColors.textfieldFill,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(26),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
           ],
-        ).createShader(Rect.fromLTWH(0.0, 0.0, 300.0, 100.0)),
-    ),
-  ),
-),
-
-
-          // Sağ altta beyaz ok simgesi
-          Positioned(
-            bottom: 30,
-            right: 30,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_forward, 
-              color:  Color(0xFFF9D77E), // mantar üstü ışık tonu
-              size: 40),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => DetectionScreen()),
-                );
-              },
+        ),
+        child: BottomNavigationBar(
+          items: const <BottomNavigationBarItem>[
+            BottomNavigationBarItem(
+              icon: Icon(Icons.camera_alt),
+              label: 'Tespit',
             ),
-          ),
-        ],
+            BottomNavigationBarItem(
+              icon: Icon(Icons.collections),
+              label: 'Koleksiyon',
+            ),
+          ],
+          currentIndex: _selectedIndex,
+          selectedItemColor: CustomColors.primaryText,
+          unselectedItemColor: CustomColors.primaryText,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          onTap: _onItemTapped,
+        ),
       ),
     );
   }
